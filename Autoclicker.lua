@@ -1,6 +1,7 @@
 --// Siah Auto Clicker
 --// VIM ONLY VERSION
 --// Mouse Mode + Point Mode + Fast CPS Mode
+--// Auto-restores Rayfield UI if it closes or opens blank
 
 repeat
 	task.wait()
@@ -12,15 +13,22 @@ local VirtualInputManager = game:GetService("VirtualInputManager")
 local CoreGui = game:GetService("CoreGui")
 local RunService = game:GetService("RunService")
 
---// Cleanup old point gui
+--// Cleanup old custom UI only
 pcall(function()
-	local Old = CoreGui:FindFirstChild("Siah_AutoClicker_PointGui")
-	if Old then
-		Old:Destroy()
+	local OldPoint = CoreGui:FindFirstChild("Siah_AutoClicker_PointGui")
+	if OldPoint then
+		OldPoint:Destroy()
 	end
 end)
 
---// Load Rayfield
+pcall(function()
+	local OldRestore = CoreGui:FindFirstChild("Siah_AutoClicker_RestoreGui")
+	if OldRestore then
+		OldRestore:Destroy()
+	end
+end)
+
+--// Load Rayfield once
 local Rayfield = loadstring(game:HttpGet("https://sirius.menu/rayfield"))()
 
 --// State
@@ -33,6 +41,7 @@ local ReleaseDelay = 0.1
 
 local ToggleButton = nil
 local UpdatingToggle = false
+local BuildingUI = false
 
 --// Helpers
 local function Num(Value, Default)
@@ -59,22 +68,6 @@ local function Notify(Text)
 		})
 	end)
 end
-
---// Rayfield Window
-local Window = Rayfield:CreateWindow({
-	Name = "Siah Auto Clicker",
-	LoadingTitle = "Siah Auto Clicker",
-	LoadingSubtitle = "by Siah",
-	ConfigurationSaving = {
-		Enabled = false,
-	},
-	Discord = {
-		Enabled = false,
-	},
-	KeySystem = false,
-})
-
-local MainTab = Window:CreateTab("Main", 4483362458)
 
 --// Point GUI
 local PointGui = Instance.new("ScreenGui")
@@ -260,6 +253,134 @@ local function SetEnabled(State, FromUI)
 	Notify(State and "Enabled" or "Disabled")
 end
 
+--// Rayfield UI detection
+local function RayfieldUIExists()
+	local FoundTitle = false
+	local FoundToggle = false
+
+	for _, Obj in ipairs(CoreGui:GetDescendants()) do
+		if Obj:IsA("TextLabel") or Obj:IsA("TextButton") then
+			if Obj.Text == "Siah Auto Clicker" then
+				FoundTitle = true
+			elseif Obj.Text == "Enabled" then
+				FoundToggle = true
+			end
+		end
+	end
+
+	return FoundTitle and FoundToggle
+end
+
+--// Rayfield UI builder
+local function BuildRayfieldUI()
+	if BuildingUI then
+		return
+	end
+
+	BuildingUI = true
+	ToggleButton = nil
+
+	local Success, Err = pcall(function()
+		local Window = Rayfield:CreateWindow({
+			Name = "Siah Auto Clicker",
+			LoadingTitle = "Siah Auto Clicker",
+			LoadingSubtitle = "by Siah",
+			ConfigurationSaving = {
+				Enabled = false,
+			},
+			Discord = {
+				Enabled = false,
+			},
+			KeySystem = false,
+		})
+
+		local MainTab = Window:CreateTab("Main", 4483362458)
+
+		ToggleButton = MainTab:CreateToggle({
+			Name = "Enabled",
+			CurrentValue = Enabled,
+			Flag = "SiahEnabled_" .. tostring(math.random(100000, 999999)),
+			Callback = function(Value)
+				if UpdatingToggle then
+					return
+				end
+
+				SetEnabled(Value, true)
+			end,
+		})
+
+		MainTab:CreateToggle({
+			Name = "10K CPS Mode",
+			CurrentValue = FastMode,
+			Flag = "SiahFastMode_" .. tostring(math.random(100000, 999999)),
+			Callback = function(Value)
+				FastMode = Value
+			end,
+		})
+
+		MainTab:CreateDropdown({
+			Name = "Mode",
+			Options = { "Mouse", "Point" },
+			CurrentOption = { Mode },
+			MultipleOptions = false,
+			Flag = "SiahMode_" .. tostring(math.random(100000, 999999)),
+			Callback = function(Option)
+				if type(Option) == "table" then
+					Mode = Option[1] or "Mouse"
+				else
+					Mode = Option or "Mouse"
+				end
+
+				Point.Visible = (Mode == "Point")
+			end,
+		})
+
+		MainTab:CreateInput({
+			Name = "Click Delay",
+			PlaceholderText = tostring(ClickDelay),
+			RemoveTextAfterFocusLost = false,
+			Flag = "SiahClickDelay_" .. tostring(math.random(100000, 999999)),
+			Callback = function(Text)
+				ClickDelay = Num(Text, 0.1)
+			end,
+		})
+
+		MainTab:CreateInput({
+			Name = "Release Delay",
+			PlaceholderText = tostring(ReleaseDelay),
+			RemoveTextAfterFocusLost = false,
+			Flag = "SiahReleaseDelay_" .. tostring(math.random(100000, 999999)),
+			Callback = function(Text)
+				ReleaseDelay = Num(Text, 0.1)
+			end,
+		})
+
+		MainTab:CreateParagraph({
+			Title = "Info",
+			Content = "This version only uses VirtualInputManager. Press = + Backspace together to toggle. If the Rayfield UI closes or tabs break, it will auto-restore.",
+		})
+	end)
+
+	if not Success then
+		warn("Siah Auto Clicker UI build failed:", Err)
+	end
+
+	task.wait(0.25)
+	BuildingUI = false
+end
+
+--// Build UI on startup
+BuildRayfieldUI()
+
+--// Auto restore watchdog
+task.spawn(function()
+	while task.wait(1) do
+		if not RayfieldUIExists() and not BuildingUI then
+			BuildRayfieldUI()
+		end
+	end
+end)
+
 --// Keybind: = + Backspace
 local EqualsDown = false
 local BackspaceDown = false
@@ -299,68 +420,3 @@ UserInputService.InputEnded:Connect(function(Input)
 		CheckCombo()
 	end
 end)
-
---// UI controls
-ToggleButton = MainTab:CreateToggle({
-	Name = "Enabled",
-	CurrentValue = false,
-	Flag = "SiahEnabled",
-	Callback = function(Value)
-		if UpdatingToggle then
-			return
-		end
-
-		SetEnabled(Value, true)
-	end,
-})
-
-MainTab:CreateToggle({
-	Name = "10K CPS Mode",
-	CurrentValue = false,
-	Flag = "SiahFastMode",
-	Callback = function(Value)
-		FastMode = Value
-	end,
-})
-
-MainTab:CreateDropdown({
-	Name = "Mode",
-	Options = { "Mouse", "Point" },
-	CurrentOption = { "Mouse" },
-	MultipleOptions = false,
-	Flag = "SiahMode",
-	Callback = function(Option)
-		if type(Option) == "table" then
-			Mode = Option[1] or "Mouse"
-		else
-			Mode = Option or "Mouse"
-		end
-
-		Point.Visible = (Mode == "Point")
-	end,
-})
-
-MainTab:CreateInput({
-	Name = "Click Delay",
-	PlaceholderText = "0.1",
-	RemoveTextAfterFocusLost = false,
-	Flag = "SiahClickDelay",
-	Callback = function(Text)
-		ClickDelay = Num(Text, 0.1)
-	end,
-})
-
-MainTab:CreateInput({
-	Name = "Release Delay",
-	PlaceholderText = "0.1",
-	RemoveTextAfterFocusLost = false,
-	Flag = "SiahReleaseDelay",
-	Callback = function(Text)
-		ReleaseDelay = Num(Text, 0.1)
-	end,
-})
-
-MainTab:CreateParagraph({
-	Title = "Info",
-	Content = "This version only uses VirtualInputManager. Press = + Backspace together to toggle.",
-})
